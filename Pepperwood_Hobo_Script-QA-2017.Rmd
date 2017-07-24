@@ -1,0 +1,153 @@
+---
+title: "R Notebook-Pepperwood Hobo Data Analysis"
+output: html_notebook
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+```
+
+R Markdown - Individual files 
+
+```{r}
+pws <-read.csv("data/PPW_HOBO_2017_Master_Part_May.csv")
+str(pws)
+summary(pws)
+```
+
+Check the imported columns
+
+You can also embed plots, for example:
+```{r}
+str(pws)
+head(pws)
+pws$tsfmt<- as.POSIXct(pws$Date.Time,format="%Y-%m-%d %H:%M:%S")
+head(pws)
+```
+
+Lets try to do the summary by site, day for the 2017 data for RH and Temperature
+```{r}
+head(pws %>%mutate(HR= format(tsfmt,"%H"),DATE=format(tsfmt,"%Y-%m-%d")) %>% group_by(Plot,DATE,HR) %>% summarise(minHrlyTemp = min(Temp),maxHrlyTemp = max(Temp),meanHrlyTemp = mean(Temp),minHrlyRH = min(RH),maxHrlyRH = max(RH),meanHrlyRH = mean(RH)) %>% as.data.frame())
+```
+
+Lets write to CSV
+
+```{r}
+pws %>%mutate(HR= format(tsfmt,"%H"),DATE=format(tsfmt,"%Y-%m-%d")) %>% group_by(Plot,DATE,HR) %>% summarise(minHrlyTemp = min(Temp),maxHrlyTemp = max(Temp),meanHrlyTemp = mean(Temp),minHrlyRH = min(RH),maxHrlyRH = max(RH),meanHrlyRH = mean(RH)) %>% as.data.frame() %>% write.csv("data/Hobo-2017-Summary-Hourly.csv")
+```
+
+Now, lets create the daily file. We can follow the same, but now summarize by DATE
+```{r}
+pws %>%mutate(HR= format(tsfmt,"%H"),DATE=format(tsfmt,"%Y-%m-%d")) %>% group_by(Plot,DATE) %>% summarise(minHrlyTemp = min(Temp),maxHrlyTemp = max(Temp),maxHrlyTemp = max(Temp),minHrlyRH = min(RH),maxHrlyRH = max(RH),meanHrlyRH = mean(RH)) %>% as.data.frame() %>% write.csv("data/Hobo-2017-Summary-Daily.csv")
+```
+
+Lets validate our files, criteria a) Number of collection points 
+
+```{r}
+ht2017<- read.csv('./data/Hobo-2017-Summary-Hourly.csv')
+str(ht2017)
+head(ht2017)
+```
+
+Housekeeping , convert date from factor to a datetype, and add Month
+
+```{r}
+ht2017$dt <- as.Date(ht2017$DATE, "%Y-%m-%d")
+str(ht2017)
+# Check for the Sanity of data
+summary(ht2017)
+```
+
+Looks ok except for NAs, research the issue  
+```{r}
+ht2017$dt <- as.Date(ht2017$DATE, "%Y-%m-%d")
+str(ht2017)
+# Check for the Sanity of data
+summary(ht2017)
+```
+
+
+
+Plot the number of collections by day
+
+```{r}
+ht2017 %>% mutate(site = as.factor(Plot)) %>%
+group_by(site) %>%
+summarise(total = n()) %>% ggplot(aes(x=site,fill=total)) + 
+geom_bar() + 
+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Different way of looking at same, we expect for each plot 24 points for a day, so that makes it 24*365 (approx 8760 points for a site) . We get 2 by site every hour.
+```{r}
+ht2017 %>%  mutate(site = as.factor(Plot)) %>%
+group_by(site) %>%
+summarise(total = n()) %>% ggplot(aes(x=site,y=total)) + 
+geom_point() + 
+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+Issue with  1349 collection, so have less than half of the half required points, so we can drop it from analysis.
+
+
+Now, lets look at the unusually high temperatures
+```{r}
+ht2017 %>% group_by(dt)  %>% summarise(avg_temp=mean(meanHrlyTemp)) %>% ggplot(aes(dt,avg_temp)) +
+geom_point() + geom_smooth(alpha=.2, size=2)
+```
+So, mostly looks good, lets look at it closer. Nice curve showing the increase in temperatures towards summer
+
+```{r}
+p1 <- ggplot(ht2017, aes(factor(Plot), meanHrlyTemp))
+p1 <- p1 + geom_boxplot(aes(fill = factor(Plot)),outlier.colour = "red", outlier.size = 3) + theme(axis.text.x = element_text(angle = 90, hjust = 1),legend.position="none") + ggtitle("Mean temperatures across Pepperwood-2017") + xlab("Site") + 
+ylab("Mean. Temperatures")+ stat_summary(fun.y=mean, geom="line", aes(group=1))  +
+stat_summary(fun.y=mean, geom="point")
+p1
+```
+
+Issue with 1349 , putting it all out of whack.
+
+```{r}
+p1 <- ggplot(ht2017 %>% filter(!(Plot %in% c(1349))), aes(factor(Plot), meanHrlyTemp))
+p1 <- p1 + geom_boxplot(aes(fill = factor(Plot)),outlier.colour = "red", outlier.size = 3) + theme(axis.text.x = element_text(angle = 90, hjust = 1),legend.position="none") + ggtitle("Mean temperatures across Pepperwood") + xlab("Site") + 
+ylab("Mean. Temperatures")+ stat_summary(fun.y=mean, geom="line", aes(group=1))  +
+stat_summary(fun.y=mean, geom="point")
+p1
+```
+
+```{r}
+str(ht2017)
+head(ht2017 %>% mutate(MONTH= format(dt,"%m"),DAY= format(dt,"%d")) %>% as.data.frame())
+```
+```{r}
+str(ht2017)
+head(ht2017 %>% mutate(MONTH= format(dt,"%m"),DAY= format(dt,"%d")) %>% as.data.frame())
+```
+
+Lets look at mean temperatures by month
+
+```{r}
+ht2017$site<- as.factor(ht2017$Plot)
+ht2017 %>% filter(!(Plot %in% c(1342))) %>% mutate(MONTH= format(dt,"%m"),DAY= format(dt,"%d")) %>% filter(MONTH %in% c('01','02','03','04','05','06','07','08','09','10','11','12')) %>% group_by(site,MONTH,DAY) %>%
+    summarise(
+              min_temp = min(meanHrlyTemp),
+              max_temp = max(meanHrlyTemp),
+              mean_temp = max(meanHrlyTemp),
+              diu_fluct = max_temp - min_temp ,
+              total = n()) %>% ggplot(aes(site,mean_temp, color=MONTH)) + geom_point() +  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ggtitle("Mean temperatures by Month - Site n Month - 2017") + xlab("Site") + ylab("Measure of Magnitude")
+```
+
+Looks ok, lets look at daily Diurnal fluctuation 
+
+```{r}
+ht2017$site<- as.factor(ht2017$Plot)
+ht2017 %>% filter(!(Plot %in% c(1342))) %>% mutate(MONTH= format(dt,"%m"),DAY= format(dt,"%d")) %>% filter(MONTH %in% c('01','02','03','04','05','06','07','08','09','10','11','12')) %>% group_by(site,MONTH,DAY) %>%
+    summarise(
+              min_temp = min(meanHrlyTemp),
+              max_temp = max(meanHrlyTemp),
+              diu_fluct = max_temp - min_temp ,
+              total = n()) %>% ggplot(aes(site,diu_fluct, color=MONTH)) + geom_point() +  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + ggtitle("Diurnal fluctuation - Site n Month - 2017") + xlab("Site") + ylab("Measure of Magnitude")
+```
